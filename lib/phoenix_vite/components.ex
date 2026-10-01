@@ -43,12 +43,16 @@ defmodule PhoenixVite.Components do
 
   Switches between dev server provided resources or static resources based
   on a vite manifest file.
+
+  `nonce` is set on every script and link rendered, for a content security
+  policy.
   """
   attr :names, :list, required: true
   attr :manifest, :any, required: true
   attr :to_url, {:fun, 1}, default: &Function.identity/1
   attr :dev_server, :boolean, default: false
   attr :crossorigin, :any, default: false
+  attr :nonce, :string, default: nil
 
   def assets(%{dev_server: true} = assigns) do
     assets_from_dev_server(assigns)
@@ -64,17 +68,25 @@ defmodule PhoenixVite.Components do
   attr :names, :list, required: true
   attr :to_url, {:fun, 1}, default: &Function.identity/1
   attr :crossorigin, :any, default: false
+  attr :nonce, :string, default: nil
 
   # https://vite.dev/guide/backend-integration.html
   def assets_from_dev_server(assigns) do
     ~H"""
-    <script phx-track-static crossorigin={@crossorigin} type="module" src={@to_url.("/@vite/client")}>
+    <script
+      phx-track-static
+      crossorigin={@crossorigin}
+      nonce={@nonce}
+      type="module"
+      src={@to_url.("/@vite/client")}
+    >
     </script>
     <.reference_for_file
       :for={name <- @names}
       file={name}
       to_url={@to_url}
       crossorigin={@crossorigin}
+      nonce={@nonce}
     />
     """
   end
@@ -84,10 +96,11 @@ defmodule PhoenixVite.Components do
 
   Caches manifests at runtime when refernces require parsing per provided source.
   """
-  attr :name, :string, required: true
+  attr :names, :list, required: true
   attr :manifest, :any, required: true
   attr :to_url, {:fun, 1}, default: &Function.identity/1
   attr :crossorigin, :any, default: false
+  attr :nonce, :string, default: nil
 
   # https://vite.dev/guide/backend-integration.html
   def assets_from_manifest(%{manifest: manifest} = assigns) do
@@ -101,6 +114,7 @@ defmodule PhoenixVite.Components do
       manifest={@manifest}
       to_url={@to_url}
       crossorigin={@crossorigin}
+      nonce={@nonce}
     />
     """
   end
@@ -109,6 +123,7 @@ defmodule PhoenixVite.Components do
   attr :manifest, :map, required: true
   attr :to_url, {:fun, 1}, default: &Function.identity/1
   attr :crossorigin, :any, default: false
+  attr :nonce, :string, default: nil
 
   # https://vite.dev/guide/backend-integration.html
   defp assets_from_manifest_for_name(%{manifest: manifest, name: name} = assigns) do
@@ -126,17 +141,24 @@ defmodule PhoenixVite.Components do
       file={css}
       to_url={@to_url}
       crossorigin={@crossorigin}
+      nonce={@nonce}
     />
     <%= for chunk <- @imported_chunks, css <- chunk.css do %>
-      <.reference_for_file file={css} to_url={@to_url} crossorigin={@crossorigin} />
+      <.reference_for_file file={css} to_url={@to_url} crossorigin={@crossorigin} nonce={@nonce} />
     <% end %>
-    <.reference_for_file file={@chunk.file} to_url={@to_url} crossorigin={@crossorigin} />
+    <.reference_for_file
+      file={@chunk.file}
+      to_url={@to_url}
+      crossorigin={@crossorigin}
+      nonce={@nonce}
+    />
     <.reference_for_file
       :for={chunk <- @imported_chunks}
       file={chunk.file}
       rel="modulepreload"
       to_url={@to_url}
       crossorigin={@crossorigin}
+      nonce={@nonce}
     />
     """
   end
@@ -144,6 +166,7 @@ defmodule PhoenixVite.Components do
   attr :file, :string, required: true
   attr :to_url, {:fun, 1}, required: true
   attr :crossorigin, :any, default: false
+  attr :nonce, :string, default: nil
   attr :rest, :global, include: ~w(rel)
 
   defp reference_for_file(assigns) do
@@ -153,6 +176,7 @@ defmodule PhoenixVite.Components do
       phx-track-static
       type="module"
       crossorigin={@crossorigin}
+      nonce={@nonce}
       src={@to_url.(Path.join("/", @file))}
       {@rest}
     >
@@ -162,6 +186,7 @@ defmodule PhoenixVite.Components do
       phx-track-static
       rel="stylesheet"
       crossorigin={@crossorigin}
+      nonce={@nonce}
       href={@to_url.(Path.join("/", @file))}
       {@rest}
     />
