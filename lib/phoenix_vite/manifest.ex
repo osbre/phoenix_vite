@@ -63,35 +63,21 @@ defmodule PhoenixVite.Manifest do
 
   # https://vite.dev/guide/backend-integration.html
   def imported_chunks(%{} = manifest, name) do
-    chunk = Map.fetch!(manifest, name)
-    imports = chunk.imports
-
-    {chunks, _seen} =
-      Enum.reduce(imports, {[], MapSet.new()}, fn name, {acc_files, seen} ->
-        {files, seen} = imported_chunks(manifest, name, seen)
-        {acc_files ++ files, seen}
-      end)
-
-    chunks
+    manifest
+    |> Map.fetch!(name)
+    |> Map.fetch!(:imports)
+    |> walk(manifest, %{})
   end
 
-  defp imported_chunks(manifest, name, seen) do
+  defp walk([], _manifest, _seen), do: []
+
+  defp walk([name | rest], manifest, seen) when is_map_key(seen, name) do
+    walk(rest, manifest, seen)
+  end
+
+  defp walk([name | rest], manifest, seen) do
     chunk = Map.fetch!(manifest, name)
-
-    if name in seen do
-      {[], seen}
-    else
-      seen = MapSet.put(seen, name)
-      imports = chunk.imports
-
-      {chunks, seen} =
-        Enum.reduce(imports, {[], seen}, fn name, {acc_chunks, seen} ->
-          {chunks, seen} = imported_chunks(manifest, name, seen)
-          {acc_chunks ++ chunks, seen}
-        end)
-
-      {[chunk | chunks], seen}
-    end
+    [chunk | walk(chunk.imports ++ rest, manifest, Map.put(seen, name, true))]
   end
 
   def cache_static_manifest_latest(%{} = manifest) do

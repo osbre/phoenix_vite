@@ -58,5 +58,18 @@ defmodule PhoenixVite.ManifestTest do
 
       assert [] = Manifest.imported_chunks(manifest, "js/app.js")
     end
+
+    test "with nested imports" do
+      manifest =
+        Manifest.parse(%{
+          "app.js" => %{"file" => "app.js", "imports" => ["_a.js", "_b.js"]},
+          "_a.js" => %{"file" => "a.js", "imports" => ["_c.js"]},
+          "_b.js" => %{"file" => "b.js", "imports" => ["_c.js", "_a.js"]},
+          "_c.js" => %{"file" => "c.js"}
+        })
+
+      assert manifest |> Manifest.imported_chunks("app.js") |> Enum.map(& &1.file) ==
+               ["a.js", "c.js", "b.js"]
+    end
   end
 end
