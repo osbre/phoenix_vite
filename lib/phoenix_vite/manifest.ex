@@ -94,6 +94,36 @@ defmodule PhoenixVite.Manifest do
     end
   end
 
+  # Chunks reachable through dynamic imports, minus what the entries already load
+  def prefetched_files(%{} = manifest, names) do
+    names = Enum.map(names, &Path.relative/1)
+    loaded = MapSet.new(Enum.flat_map(names, &loaded_files(manifest, &1)))
+
+    names
+    |> Enum.flat_map(&Map.fetch!(manifest, &1).dynamicImports)
+    |> reachable(manifest, %{})
+    |> Enum.flat_map(&[&1.file | &1.css])
+    |> Enum.uniq()
+    |> Enum.reject(&(&1 in loaded))
+  end
+
+  defp reachable([], _manifest, _seen), do: []
+
+  defp reachable([name | rest], manifest, seen) when is_map_key(seen, name) do
+    reachable(rest, manifest, seen)
+  end
+
+  defp reachable([name | rest], manifest, seen) do
+    chunk = Map.fetch!(manifest, name)
+    seen = Map.put(seen, name, true)
+    [chunk | reachable(chunk.imports ++ chunk.dynamicImports ++ rest, manifest, seen)]
+  end
+
+  defp loaded_files(manifest, name) do
+    chunk = Map.fetch!(manifest, name)
+    Enum.flat_map([chunk | imported_chunks(manifest, name)], &[&1.file | &1.css])
+  end
+
   def cache_static_manifest_latest(%{} = manifest) do
     Map.new(manifest, fn {key, %Chunk{file: file}} -> {key, file} end)
   end

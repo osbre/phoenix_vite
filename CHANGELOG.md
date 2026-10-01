@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Add `prefetch` to `PhoenixVite.Components.assets/1` to prefetch the chunks behind dynamic imports once the page has loaded
 - Add `nonce` to `PhoenixVite.Components.assets/1`, set on every script and link it renders, for a content security policy
 
 ## [0.6.0] - 2026-09-15

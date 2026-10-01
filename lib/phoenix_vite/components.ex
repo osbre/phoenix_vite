@@ -26,6 +26,16 @@ defmodule PhoenixVite.Components do
       config :myapp, MyAppWeb.Endpoint,
         static_url: [host: "localhost", port: 5173]
 
+  To download lazily loaded chunks in the background once the page has
+  loaded, set `prefetch`:
+
+      <PhoenixVite.Components.assets
+        names={["js/app.js"]}
+        manifest={{:my_app, "priv/static/.vite/manifest.json"}}
+        dev_server={PhoenixVite.Components.has_vite_watcher?(MyAppWeb.Endpoint)}
+        prefetch={[concurrency: 3]}
+      />
+
   """
   use Phoenix.Component
   alias PhoenixVite.Manifest
@@ -44,8 +54,18 @@ defmodule PhoenixVite.Components do
   Switches between dev server provided resources or static resources based
   on a vite manifest file.
 
-  `nonce` is set on every script and link rendered, for a content security
-  policy.
+  ## Prefetching
+
+  `prefetch` downloads lazily loaded chunks after the page loads, so they are
+  already cached when needed. It does not apply on the dev server.
+
+    * `prefetch` - download them all at once
+    * `prefetch={[concurrency: 3]}` - download three at a time
+    * `prefetch={[event: "app:ready"]}` - wait for this `window` event
+      instead of `load`
+
+  `nonce` is set on every script and link rendered, the prefetch script
+  included, for a content security policy.
   """
   attr :names, :list, required: true
   attr :manifest, :any, required: true
@@ -53,6 +73,10 @@ defmodule PhoenixVite.Components do
   attr :dev_server, :boolean, default: false
   attr :crossorigin, :any, default: false
   attr :nonce, :string, default: nil
+
+  attr :prefetch, :any,
+    default: false,
+    doc: "`true` or a keyword list of `:concurrency` and `:event`"
 
   def assets(%{dev_server: true} = assigns) do
     assets_from_dev_server(assigns)
@@ -69,6 +93,7 @@ defmodule PhoenixVite.Components do
   attr :to_url, {:fun, 1}, default: &Function.identity/1
   attr :crossorigin, :any, default: false
   attr :nonce, :string, default: nil
+  attr :prefetch, :any, default: false
 
   # https://vite.dev/guide/backend-integration.html
   def assets_from_dev_server(assigns) do
@@ -101,6 +126,7 @@ defmodule PhoenixVite.Components do
   attr :to_url, {:fun, 1}, default: &Function.identity/1
   attr :crossorigin, :any, default: false
   attr :nonce, :string, default: nil
+  attr :prefetch, :any, default: false
 
   # https://vite.dev/guide/backend-integration.html
   def assets_from_manifest(%{manifest: manifest} = assigns) do
@@ -115,6 +141,15 @@ defmodule PhoenixVite.Components do
       to_url={@to_url}
       crossorigin={@crossorigin}
       nonce={@nonce}
+    />
+    <.prefetch
+      :if={@prefetch}
+      names={@names}
+      manifest={@manifest}
+      to_url={@to_url}
+      crossorigin={@crossorigin}
+      nonce={@nonce}
+      options={if @prefetch == true, do: [], else: @prefetch}
     />
     """
   end
@@ -161,6 +196,67 @@ defmodule PhoenixVite.Components do
       nonce={@nonce}
     />
     """
+  end
+
+  attr :names, :list, required: true
+  attr :manifest, :map, required: true
+  attr :to_url, {:fun, 1}, required: true
+  attr :crossorigin, :any, required: true
+  attr :nonce, :string, required: true
+  attr :options, :list, required: true
+
+  defp prefetch(%{manifest: manifest, options: options} = assigns) do
+    options = Keyword.validate!(options, concurrency: nil, event: "load")
+
+    assets =
+      manifest
+      |> Manifest.prefetched_files(assigns.names)
+      |> Enum.map(&prefetch_attributes(&1, assigns))
+
+    assigns =
+      assign(assigns, assets: assets, concurrency: options[:concurrency], event: options[:event])
+
+    ~H"""
+    <script :if={@assets != []} nonce={@nonce}>
+      (() => {
+        const queue = <%= script_json(@assets) %>
+        const next = () => {
+          const asset = queue.shift()
+          if (!asset) return
+          const link = document.createElement("link")
+          for (const name in asset) link.setAttribute(name, asset[name])
+          link.onload = link.onerror = next
+          document.head.append(link)
+        }
+        window.addEventListener(<%= script_json(@event) %>, () => setTimeout(() => {
+          for (let i = <%= script_json(@concurrency) %> || queue.length; i > 0; i--) next()
+        }))
+      })()
+    </script>
+    """
+  end
+
+  # Raw, as HTML escaping would break the JS, with "<" escaped so a value cannot close the script.
+  defp script_json(value) do
+    value |> JSON.encode!() |> String.replace("<", "\\u003c") |> Phoenix.HTML.raw()
+  end
+
+  defp prefetch_attributes(file, %{to_url: to_url, crossorigin: crossorigin}) do
+    as = if Path.extname(file) == ".css", do: "style", else: "script"
+
+    attributes = %{
+      rel: "prefetch",
+      fetchpriority: "low",
+      as: as,
+      href: to_url.(Path.join("/", file))
+    }
+
+    case crossorigin do
+      false -> attributes
+      nil -> attributes
+      true -> Map.put(attributes, :crossorigin, "")
+      value -> Map.put(attributes, :crossorigin, value)
+    end
   end
 
   attr :file, :string, required: true
